@@ -62,12 +62,12 @@ impl<T> LinkedList<T> {
 }
 
 /// An Immutable look into a `LinkedList` that can be moved back and forth
-pub struct Cursor<'a, T: 'a> {
+pub struct Cursor<'list, T: 'list> {
     current: Option<NonNull<Node<T>>>,
-    list: &'a LinkedList<T>,
+    list: &'list LinkedList<T>,
 }
 
-impl<'a, T> Cursor<'a, T> {
+impl<'list, T> Cursor<'list, T> {
     fn next(&self) -> Option<NonNull<Node<T>>> {
         self.current.map_or(self.list.head,|node| unsafe { node.as_ref().next })
     }
@@ -85,22 +85,22 @@ impl<'a, T> Cursor<'a, T> {
     }
 
     /// Get the current element
-    pub fn current(&self) -> Option<&'a T> {
+    pub fn current(&self) -> Option<&'list T> {
         self.current.map(|node| unsafe {
-            // Need an unbound lifetime to get 'a
+            // Need an unbound lifetime to get 'list
             let node = &*node.as_ptr();
             &node.element
         })
     }
     /// Get the following element
-    pub fn peek(&self) -> Option<&'a T> {
+    pub fn peek(&self) -> Option<&'list T> {
         self.next().map(|next_node| unsafe {
             let next_node = &*next_node.as_ptr();
             &next_node.element
         })
     }
     /// Get the previous element
-    pub fn peek_before(&self) -> Option<&'a T> {
+    pub fn peek_before(&self) -> Option<&'list T> {
         self.prev().map(|prev_node| unsafe {
             let prev_node = &*prev_node.as_ptr();
             &prev_node.element
@@ -109,13 +109,13 @@ impl<'a, T> Cursor<'a, T> {
 }
 
 /// A mutable view into a `LinkedList` that can be used to edit the collection
-pub struct CursorMut<'a, T: 'a> {
+pub struct CursorMut<'list, T: 'list> {
     current: Option<NonNull<Node<T>>>,
-    list: &'a mut LinkedList<T>,
+    list: &'list mut LinkedList<T>,
     current_len: usize,
 }
 
-impl<'a, T> CursorMut<'a, T> {
+impl<'list, T> CursorMut<'list, T> {
     fn next(&self) -> Option<NonNull<Node<T>>> {
         self.current.map_or(self.list.head,|node| unsafe { node.as_ref().next })
     }
@@ -145,22 +145,22 @@ impl<'a, T> CursorMut<'a, T> {
     }
 
     /// Get the current element
-    pub fn current(&mut self) -> Option<&'a mut T> {
+    pub fn current(&mut self) -> Option<&mut T> {
         self.current.map(|node| unsafe {
-            // Need an unbound lifetime to get 'a
+            // Need an unbound lifetime to get same lifetime as self
             let node = &mut *node.as_ptr();
             &mut node.element
         })
     }
     /// Get the next element
-    pub fn peek(&mut self) -> Option<&'a mut T> {
+    pub fn peek(&mut self) -> Option<&mut T> {
         self.next().map(|next_node| unsafe {
                 let next_node = &mut *next_node.as_ptr();
                 &mut next_node.element
             })
     }
     /// Get the previous element
-    pub fn peek_before(&self) -> Option<&'a mut T> {
+    pub fn peek_before(&self) -> Option<&mut T> {
         self.prev().map(|prev_node| unsafe {
                 let prev_node = &mut *prev_node.as_ptr();
                 &mut prev_node.element
@@ -168,7 +168,7 @@ impl<'a, T> CursorMut<'a, T> {
     }
 
     /// Get an immutable cursor at the current element
-    pub fn as_cursor<'c, 'b: 'c>(&'b self) -> Cursor<'c, T> {
+    pub fn as_cursor(&self) -> Cursor<T> {
         Cursor {
             current: self.current,
             list: self.list,
@@ -296,7 +296,7 @@ impl<'a, T> CursorMut<'a, T> {
         })
     }
     /// Remove and return the item before the cursor
-    pub fn pop_before(&mut self) -> Option<T> {
+    pub fn pop_prev(&mut self) -> Option<T> {
         self.prev().map(|node| unsafe {
             self.list.len -= 1;
             self.dec_len();
