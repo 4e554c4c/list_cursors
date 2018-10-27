@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #![feature(box_into_raw_non_null)]
 #![feature(box_syntax)]
+use std::marker::PhantomData;
 use std::ptr::NonNull;
 
 /// A doubly-linked list with owned nodes.
@@ -13,6 +14,7 @@ pub struct LinkedList<T> {
     head: Option<NonNull<Node<T>>>,
     tail: Option<NonNull<Node<T>>>,
     len: usize,
+    marker: PhantomData<Box<Node<T>>>,
 }
 
 struct Node<T> {
@@ -40,6 +42,7 @@ impl<T> LinkedList<T> {
             head: None,
             tail: None,
             len: 0,
+            marker: PhantomData,
         }
     }
     /// Provides a cursor to the empty element
@@ -333,6 +336,7 @@ impl<'list, T> CursorMut<'list, T> {
                     head: Some(node),
                     tail: old_tail,
                     len: old_len - self.current_len,
+                    marker: PhantomData,
                 }
             })
             .unwrap_or_else(LinkedList::new)
@@ -353,6 +357,7 @@ impl<'list, T> CursorMut<'list, T> {
                         head: Some(current),
                         tail: old_tail,
                         len: old_len - self.current_len,
+                        marker: PhantomData,
                     }
                 })
                 .unwrap_or_else(LinkedList::new),
