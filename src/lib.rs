@@ -350,57 +350,70 @@ impl<'list, T> CursorMut<'list, T> {
         })
     }
 
-    // TODO fix splits
+    fn split_at(self, current: NonNull<Node<T>>, split_len: usize) -> LinkedList<T> {
+        let total_len = self.list.len;
+
+        let next = unsafe { (*current.as_ptr()).next };
+
+        if let Some(next) = next {
+            let new_head = Some(next);
+            let new_tail = self.list.tail.take();
+            let new_len = total_len - split_len;
+
+            let old_head = self.list.head;
+            let old_tail = Some(current);
+            let old_len = total_len - new_len;
+
+            unsafe {
+                (*current.as_ptr()).next = None;
+                (*next.as_ptr()).prev = None;
+            }
+
+            self.list.head = old_head;
+            self.list.tail = old_tail;
+            self.list.len = old_len;
+
+            LinkedList {
+                head: new_head,
+                tail: new_tail,
+                len: new_len,
+                marker: PhantomData,
+            }
+        } else {
+            LinkedList::new()
+        }
+    }
 
     /// Split the list in two after the current element
     /// The returned list consists of all elements following the current one.
     // note: consuming the cursor is not necessary here, but it makes sense
     // given the interface
     pub fn split(self) -> LinkedList<T> {
-        self.next()
-            .map(|node| {
-                match self.current {
-                    None => self.list.head = None,
-                    Some(mut last) => unsafe { last.as_mut().next = None },
-                }
-                let old_tail = self.list.tail;
-                self.list.tail = self.current;
+        use std::mem::replace;
 
-                let old_len = self.list.len;
-                self.list.len = self.current_len;
-                LinkedList {
-                    head: Some(node),
-                    tail: old_tail,
-                    len: old_len - self.current_len,
-                    marker: PhantomData,
-                }
-            })
-            .unwrap_or_else(LinkedList::new)
+        match self.current {
+            None => replace(self.list, LinkedList::new()),
+
+            Some(current) => {
+                let split_len = self.current_len;
+                self.split_at(current, split_len)
+            }
+        }
     }
+
     /// Split the list in two before the current element
     pub fn split_before(self) -> LinkedList<T> {
-        match self.prev() {
-            None => std::mem::replace(self.list, LinkedList::new()),
-            Some(mut prev) => self
-                .current
-                .map(|current| unsafe {
-                    let old_tail = self.list.tail;
-                    self.list.tail = Some(prev);
-                    let old_len = self.list.len;
-                    self.list.len = self.current_len - 1;
+        use std::mem::replace;
 
-                    (*current.as_ptr()).prev = None;
-                    (*prev.as_ptr()).next = None;
-                    let new_len = old_len - self.current_len + 1;
-
-                    LinkedList {
-                        head: Some(current),
-                        tail: old_tail,
-                        len: new_len,
-                        marker: PhantomData,
-                    }
-                })
-                .unwrap_or_else(LinkedList::new),
+        match self.current {
+            None => replace(self.list, LinkedList::new()),
+            Some(current) => match unsafe { (*current.as_ptr()).prev } {
+                None => replace(self.list, LinkedList::new()),
+                Some(prev) => {
+                    let split_len = self.current_len - 1;
+                    self.split_at(prev, split_len)
+                }
+            },
         }
     }
 }
@@ -412,23 +425,80 @@ mod tests {
 
     use super::{Cursor, CursorMut, LinkedList};
 
-    fn cmp_iterator<T, I>(list: LinkedList<T>, iter: I)
+    fn mut_cmp_iterator<T, I>(list: &mut LinkedList<T>, iter: I)
     where
         T: PartialEq + Debug,
-        I: IntoIterator<Item = T>,
+        I: IntoIterator<Item = T> + Clone + Iterator + DoubleEndedIterator<Item = T>,
     {
-        let mut cursor = list.cursor();
-        for i in iter {
+        {
+            let mut cursor = list.cursor_mut();
+            for i in iter.clone() {
+                cursor.move_next();
+                let mut i = i;
+                assert_eq!(cursor.current(), Some(&mut i));
+            }
             cursor.move_next();
-            assert_eq!(cursor.current(), Some(&i));
+            assert_eq!(cursor.current(), None);
         }
-        cursor.move_next();
-        assert_eq!(cursor.current(), None);
+        {
+            let mut cursor = list.cursor_mut();
+            let iter = iter.rev();
+
+            for i in iter {
+                cursor.move_prev();
+                let mut i = i;
+                assert_eq!(cursor.current(), Some(&mut i));
+            }
+            cursor.move_prev();
+            assert_eq!(cursor.current(), None);
+        }
+    }
+
+    fn cmp_iterator<T, I>(list: &LinkedList<T>, iter: I)
+    where
+        T: PartialEq + Debug,
+        I: IntoIterator<Item = T> + Clone + Iterator + DoubleEndedIterator<Item = T>,
+    {
+        {
+            // test raw links
+            let mut cursor = list.cursor();
+            cursor.move_next();
+            while let Some(current) = cursor.current {
+                if let Some(next) = unsafe { (*current.as_ptr()).next } {
+                    assert_eq!(unsafe { (*next.as_ptr()).prev }, Some(current));
+                }
+                cursor.move_next();
+            }
+        }
+        {
+            // test forwards iteration
+            let mut cursor = list.cursor();
+            for i in iter.clone() {
+                cursor.move_next();
+                assert_eq!(cursor.current(), Some(&i));
+            }
+            cursor.move_next();
+            assert_eq!(cursor.current(), None);
+        }
+        {
+            // test reverse iteration
+            let mut cursor = list.cursor();
+            let iter = iter.rev();
+
+            for i in iter {
+                cursor.move_prev();
+                //println!("{:?}", cursor.current());
+                assert_eq!(cursor.current(), Some(&i));
+            }
+            cursor.move_prev();
+            assert_eq!(cursor.current(), None);
+        }
     }
 
     #[test]
     fn sanity_test() {
-        cmp_iterator(LinkedList::from_iter(0..10), 0..10);
+        cmp_iterator(&LinkedList::from_iter(0..10), 0..10);
+        mut_cmp_iterator(&mut LinkedList::from_iter(0..10), 0..10);
     }
     #[test]
     fn reverse() {
@@ -461,35 +531,104 @@ mod tests {
         assert_eq!(list.len, 2);
         assert_eq!(list2.len, 3);
     }
+
+    /*
+        [Node:2] <- [List] ->   [Node:0]
+            None  <- [Node:0] -> [Node:1]
+        [Node:0] -> [Node:1] -> [Node:2]
+        [Node:1] -> [Node:2] ->  None
+    
+        [Node:0] <- [List] ->   [Node:0]
+            None  <- [Node:0] ->  None
+    
+        test cases:
+            [L] cursor "points" to list:
+                current = None (= List)
+            [H] cursor has no prev:
+                current = [Node:0]
+            [T] cursor has no next:
+                current = [Node:2]
+            [G] general case:
+                current = [Node:1]
+    
+            [S] single element, neither prev nor next
+    
+    */
+
     #[test]
     fn split() {
-        let mut list = LinkedList::from_iter(0..10);
-        let list2 = {
-            let mut cursor = list.cursor_mut();
-            cursor.move_next();
-            cursor.move_next();
-            cursor.move_next();
-            cursor.split()
-        };
-        println!("{:?}", list);
-        println!("{:?}", list2);
-        cmp_iterator(list, 0..3);
-        cmp_iterator(list2, 3..10);
+        fn test_split(n: usize, mut i: Option<usize>) {
+            let mut list = LinkedList::from_iter(0..n);
+            print!("split {:?} at {:?}", list, i);
+            let tail = {
+                let mut c = list.cursor_mut();
+                if let Some(i) = i {
+                    c.move_next();
+                    for _ in 0..i {
+                        c.move_next();
+                    }
+                }
+                println!(" = {:?}", c.current());
+                assert_eq!(i.as_mut(), c.current());
+                c.split()
+            };
+            println!("old: {:?}", list);
+            println!("new: {:?}", tail);
+            match i {
+                Some(i) => {
+                    cmp_iterator(&list, 0..=i);
+                    cmp_iterator(&tail, i + 1..n);
+                }
+                _ => {
+                    cmp_iterator(&list, 0..0);
+                    cmp_iterator(&tail, 0..n);
+                }
+            }
+        }
+
+        test_split(10, None); // case L
+        test_split(10, Some(0)); // case H
+        test_split(10, Some(9)); // case T
+        test_split(10, Some(3)); // case G
+        test_split(1, None); // case L
+        test_split(1, Some(0)); // case S
     }
     #[test]
     fn split_before() {
-        let mut list = LinkedList::from_iter(0..10);
-        let list2 = {
-            let mut cursor = list.cursor_mut();
-            cursor.move_next();
-            cursor.move_next();
-            cursor.move_next();
-            cursor.move_next();
-            cursor.split_before()
-        };
-        println!("{:?}", list);
-        println!("{:?}", list2);
-        cmp_iterator(list, 0..3);
-        cmp_iterator(list2, 3..10);
+        fn test_split(n: usize, i: Option<usize>) {
+            let mut list = LinkedList::from_iter(0..n);
+            print!("split {:?} before {:?}", list, i);
+            let tail = {
+                let mut c = list.cursor_mut();
+                if let Some(i) = i {
+                    c.move_next();
+                    for _ in 0..i {
+                        c.move_next();
+                    }
+                }
+                println!(" = {:?}", c.current());
+                c.split_before()
+            };
+            println!("old: {:?}", list);
+            println!("new: {:?}", tail);
+            match i {
+                Some(i) => {
+                    cmp_iterator(&list, 0..i);
+                    cmp_iterator(&tail, i..n);
+                }
+                _ => {
+                    cmp_iterator(&list, 0..0);
+                    cmp_iterator(&tail, 0..n);
+                }
+            }
+        }
+
+        test_split(10, None); // case L
+        test_split(10, Some(0)); // case L
+        test_split(10, Some(1)); // case H
+        test_split(10, Some(9)); // case T
+        test_split(10, Some(3)); // case G
+        test_split(1, None); // case L
+        test_split(1, Some(0)); // case S
     }
 }
