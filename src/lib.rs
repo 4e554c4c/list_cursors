@@ -69,10 +69,12 @@ pub struct Cursor<'list, T: 'list> {
 
 impl<'list, T> Cursor<'list, T> {
     fn next(&self) -> Option<NonNull<Node<T>>> {
-        self.current.map_or(self.list.head,|node| unsafe { node.as_ref().next })
+        self.current
+            .map_or(self.list.head, |node| unsafe { node.as_ref().next })
     }
     fn prev(&self) -> Option<NonNull<Node<T>>> {
-        self.current.map_or(self.list.tail,|node| unsafe { node.as_ref().prev })
+        self.current
+            .map_or(self.list.tail, |node| unsafe { node.as_ref().prev })
     }
     /// Move to the subsequent element of the list if it exists or the empty
     /// element
@@ -117,19 +119,21 @@ pub struct CursorMut<'list, T: 'list> {
 
 impl<'list, T> CursorMut<'list, T> {
     fn next(&self) -> Option<NonNull<Node<T>>> {
-        self.current.map_or(self.list.head,|node| unsafe { node.as_ref().next })
+        self.current
+            .map_or(self.list.head, |node| unsafe { node.as_ref().next })
     }
     fn prev(&self) -> Option<NonNull<Node<T>>> {
-        self.current.map_or(self.list.tail,|node| unsafe { node.as_ref().prev })
+        self.current
+            .map_or(self.list.tail, |node| unsafe { node.as_ref().prev })
     }
     // `current_len` is in the range 0...self.list.len at all times
     fn inc_len(&mut self) {
         self.current_len += 1;
-        self.current_len %= self.list.len+1;
+        self.current_len %= self.list.len + 1;
     }
     fn dec_len(&mut self) {
         self.current_len += self.list.len;
-        self.current_len %= self.list.len+1;
+        self.current_len %= self.list.len + 1;
     }
 
     /// Move to the subsequent element of the list if it exists or the empty
@@ -155,16 +159,16 @@ impl<'list, T> CursorMut<'list, T> {
     /// Get the next element
     pub fn peek(&mut self) -> Option<&mut T> {
         self.next().map(|next_node| unsafe {
-                let next_node = &mut *next_node.as_ptr();
-                &mut next_node.element
-            })
+            let next_node = &mut *next_node.as_ptr();
+            &mut next_node.element
+        })
     }
     /// Get the previous element
     pub fn peek_before(&self) -> Option<&mut T> {
         self.prev().map(|prev_node| unsafe {
-                let prev_node = &mut *prev_node.as_ptr();
-                &mut prev_node.element
-            })
+            let prev_node = &mut *prev_node.as_ptr();
+            &mut prev_node.element
+        })
     }
 
     /// Get an immutable cursor at the current element
@@ -220,15 +224,12 @@ impl<'list, T> CursorMut<'list, T> {
     /// Insert `list` between the current element and the next
     pub fn insert_list(&mut self, list: LinkedList<T>) {
         match (list.head, list.tail) {
-            (Some(mut head),Some(mut tail)) => {
-                unsafe {
-                    head.as_mut().prev = self.current;
-                    tail.as_mut().next = self.next();
-        
-                }
+            (Some(mut head), Some(mut tail)) => unsafe {
+                head.as_mut().prev = self.current;
+                tail.as_mut().next = self.next();
             },
             //splicing in an empty list should be a no-op
-            (None,None) => return,
+            (None, None) => return,
             _ => unreachable!(),
         }
         unsafe {
@@ -247,15 +248,12 @@ impl<'list, T> CursorMut<'list, T> {
     /// Insert `list` between the previous element and current
     pub fn insert_list_before(&mut self, list: LinkedList<T>) {
         match (list.head, list.tail) {
-            (Some(mut head),Some(mut tail)) => {
-                unsafe {
-                    head.as_mut().prev = self.prev();
-                    tail.as_mut().next = self.current;
-
-                }
+            (Some(mut head), Some(mut tail)) => unsafe {
+                head.as_mut().prev = self.prev();
+                tail.as_mut().next = self.current;
             },
             //splicing in an empty list should be a no-op
-            (None,None) => return,
+            (None, None) => return,
             _ => unreachable!(),
         }
         unsafe {
@@ -274,12 +272,11 @@ impl<'list, T> CursorMut<'list, T> {
         }
     }
 
-
     /// Remove and return the item following the cursor
     pub fn pop(&mut self) -> Option<T> {
         self.next().map(|node| unsafe {
             self.list.len -= 1;
-            self.current_len %= self.list.len+1;
+            self.current_len %= self.list.len + 1;
 
             let node = Box::from_raw(node.as_ptr());
             match self.current {
@@ -321,52 +318,52 @@ impl<'list, T> CursorMut<'list, T> {
     // note: consuming the cursor is not necessary here, but it makes sense
     // given the interface
     pub fn split(self) -> LinkedList<T> {
-        self.next().map(|node| {
-            match self.current {
-                None => self.list.head = None,
-                Some(mut last) => unsafe {
-                    last.as_mut().next = None
-                },
-            }
-            let old_tail = self.list.tail;
-            self.list.tail = self.current;
+        self.next()
+            .map(|node| {
+                match self.current {
+                    None => self.list.head = None,
+                    Some(mut last) => unsafe { last.as_mut().next = None },
+                }
+                let old_tail = self.list.tail;
+                self.list.tail = self.current;
 
-            let old_len = self.list.len;
-            self.list.len = self.current_len;
-            LinkedList {
-                head: Some(node),
-                tail: old_tail,
-                len: old_len - self.current_len,
-            }
-        }).unwrap_or_else(LinkedList::new)
+                let old_len = self.list.len;
+                self.list.len = self.current_len;
+                LinkedList {
+                    head: Some(node),
+                    tail: old_tail,
+                    len: old_len - self.current_len,
+                }
+            })
+            .unwrap_or_else(LinkedList::new)
     }
     /// Split the list in two before the current element
     pub fn split_before(self) -> LinkedList<T> {
         match self.prev() {
             None => std::mem::replace(self.list, LinkedList::new()),
-            Some(mut prev) => {
-                self.current.map(|current| unsafe {
+            Some(mut prev) => self
+                .current
+                .map(|current| unsafe {
                     let old_tail = self.list.tail;
                     self.list.tail = Some(prev);
                     let old_len = self.list.len;
-                    self.list.len = self.current_len -1;;
+                    self.list.len = self.current_len - 1;;
 
                     LinkedList {
                         head: Some(current),
                         tail: old_tail,
                         len: old_len - self.current_len,
                     }
-                }).unwrap_or_else(LinkedList::new)
-            },
+                })
+                .unwrap_or_else(LinkedList::new),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{LinkedList,Cursor,CursorMut};
-    fn from_iter<T,I: IntoIterator<Item=T>>(iter: I) -> LinkedList<T>
-    {
+    use super::{Cursor, CursorMut, LinkedList};
+    fn from_iter<T, I: IntoIterator<Item = T>>(iter: I) -> LinkedList<T> {
         let mut list = LinkedList::new();
         {
             let mut cursor = list.cursor_mut();
@@ -378,7 +375,9 @@ mod tests {
     }
     use std::fmt::Debug;
     fn cmp_iterator<T, I>(list: LinkedList<T>, iter: I)
-        where T: PartialEq + Debug, I: IntoIterator<Item=T>
+    where
+        T: PartialEq + Debug,
+        I: IntoIterator<Item = T>,
     {
         let mut cursor = list.cursor();
         for i in iter {
@@ -386,7 +385,7 @@ mod tests {
             assert_eq!(cursor.current(), Some(&i));
         }
         cursor.move_next();
-        assert_eq!(cursor.current(),None);
+        assert_eq!(cursor.current(), None);
     }
     fn print_list<T: Debug>(list: &LinkedList<T>) {
         let mut cursor = list.cursor();
@@ -394,7 +393,7 @@ mod tests {
         print!("[");
         loop {
             match cursor.current() {
-                Some(i) => print!("{:?},",i),
+                Some(i) => print!("{:?},", i),
                 None => break,
             }
             cursor.move_next();
@@ -404,7 +403,7 @@ mod tests {
 
     #[test]
     fn sanity_test() {
-        cmp_iterator(from_iter(0..10),0..10);
+        cmp_iterator(from_iter(0..10), 0..10);
     }
     #[test]
     fn reverse() {
@@ -415,7 +414,7 @@ mod tests {
             assert_eq!(cursor.current(), Some(&i));
         }
         cursor.move_prev();
-        assert_eq!(cursor.current(),None);
+        assert_eq!(cursor.current(), None);
     }
     #[test]
     fn peek() {
@@ -427,7 +426,7 @@ mod tests {
     #[test]
     fn len() {
         let mut list = from_iter(0..5);
-        assert_eq!(list.len,5);
+        assert_eq!(list.len, 5);
         let list2 = {
             let mut cursor = list.cursor_mut();
             cursor.move_next();
@@ -435,7 +434,7 @@ mod tests {
             cursor.split()
         };
         assert_eq!(list.len, 2);
-        assert_eq!(list2.len,3);
+        assert_eq!(list2.len, 3);
     }
     #[test]
     fn split() {
@@ -449,8 +448,8 @@ mod tests {
         };
         print_list(&list);
         print_list(&list2);
-        cmp_iterator(list,0..3);
-        cmp_iterator(list2,3..10);
+        cmp_iterator(list, 0..3);
+        cmp_iterator(list2, 3..10);
     }
     #[test]
     fn split_before() {
@@ -465,7 +464,7 @@ mod tests {
         };
         print_list(&list);
         print_list(&list2);
-        cmp_iterator(list,0..3);
-        cmp_iterator(list2,3..10);
+        cmp_iterator(list, 0..3);
+        cmp_iterator(list2, 3..10);
     }
 }
