@@ -387,12 +387,16 @@ impl<'list, T> CursorMut<'list, T> {
                     let old_tail = self.list.tail;
                     self.list.tail = Some(prev);
                     let old_len = self.list.len;
-                    self.list.len = self.current_len - 1;;
+                    self.list.len = self.current_len - 1;
+
+                    (*current.as_ptr()).prev = None;
+                    (*prev.as_ptr()).next = None;
+                    let new_len = old_len - self.current_len + 1;
 
                     LinkedList {
                         head: Some(current),
                         tail: old_tail,
-                        len: old_len - self.current_len,
+                        len: new_len,
                         marker: PhantomData,
                     }
                 })
