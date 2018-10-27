@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 #![feature(box_into_raw_non_null)]
 #![feature(box_syntax)]
+use std::fmt;
+use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
@@ -62,6 +64,40 @@ impl<T> LinkedList<T> {
         }
     }
     /* other list methods go here */
+}
+
+impl<T> Drop for LinkedList<T> {
+    fn drop(&mut self) {
+        let mut c = self.cursor_mut();
+        while c.pop().is_some() {}
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for LinkedList<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut t = f.debug_list();
+        let mut c = self.cursor();
+        c.move_next();
+        while let Some(e) = c.current() {
+            t.entry(&e);
+            c.move_next();
+        }
+
+        t.finish()
+    }
+}
+
+impl<T> FromIterator<T> for LinkedList<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> LinkedList<T> {
+        let mut list = LinkedList::new();
+        {
+            let mut cursor = list.cursor_mut();
+            for el in iter {
+                cursor.insert_before(el);
+            }
+        }
+        list
+    }
 }
 
 /// An Immutable look into a `LinkedList` that can be moved back and forth
@@ -367,18 +403,11 @@ impl<'list, T> CursorMut<'list, T> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cursor, CursorMut, LinkedList};
-    fn from_iter<T, I: IntoIterator<Item = T>>(iter: I) -> LinkedList<T> {
-        let mut list = LinkedList::new();
-        {
-            let mut cursor = list.cursor_mut();
-            for el in iter {
-                cursor.insert_before(el);
-            }
-        }
-        list
-    }
     use std::fmt::Debug;
+    use std::iter::FromIterator;
+
+    use super::{Cursor, CursorMut, LinkedList};
+
     fn cmp_iterator<T, I>(list: LinkedList<T>, iter: I)
     where
         T: PartialEq + Debug,
@@ -392,27 +421,14 @@ mod tests {
         cursor.move_next();
         assert_eq!(cursor.current(), None);
     }
-    fn print_list<T: Debug>(list: &LinkedList<T>) {
-        let mut cursor = list.cursor();
-        cursor.move_next();
-        print!("[");
-        loop {
-            match cursor.current() {
-                Some(i) => print!("{:?},", i),
-                None => break,
-            }
-            cursor.move_next();
-        }
-        println!("]")
-    }
 
     #[test]
     fn sanity_test() {
-        cmp_iterator(from_iter(0..10), 0..10);
+        cmp_iterator(LinkedList::from_iter(0..10), 0..10);
     }
     #[test]
     fn reverse() {
-        let list = from_iter(0..4);
+        let list = LinkedList::from_iter(0..4);
         let mut cursor = list.cursor();
         for i in (0..4).rev() {
             cursor.move_prev();
@@ -423,14 +439,14 @@ mod tests {
     }
     #[test]
     fn peek() {
-        let list = from_iter(3..5);
+        let list = LinkedList::from_iter(3..5);
         let cursor = list.cursor();
         assert_eq!(cursor.peek(), Some(&3));
         assert_eq!(cursor.peek_before(), Some(&4));
     }
     #[test]
     fn len() {
-        let mut list = from_iter(0..5);
+        let mut list = LinkedList::from_iter(0..5);
         assert_eq!(list.len, 5);
         let list2 = {
             let mut cursor = list.cursor_mut();
@@ -443,7 +459,7 @@ mod tests {
     }
     #[test]
     fn split() {
-        let mut list = from_iter(0..10);
+        let mut list = LinkedList::from_iter(0..10);
         let list2 = {
             let mut cursor = list.cursor_mut();
             cursor.move_next();
@@ -451,14 +467,14 @@ mod tests {
             cursor.move_next();
             cursor.split()
         };
-        print_list(&list);
-        print_list(&list2);
+        println!("{:?}", list);
+        println!("{:?}", list2);
         cmp_iterator(list, 0..3);
         cmp_iterator(list2, 3..10);
     }
     #[test]
     fn split_before() {
-        let mut list = from_iter(0..10);
+        let mut list = LinkedList::from_iter(0..10);
         let list2 = {
             let mut cursor = list.cursor_mut();
             cursor.move_next();
@@ -467,8 +483,8 @@ mod tests {
             cursor.move_next();
             cursor.split_before()
         };
-        print_list(&list);
-        print_list(&list2);
+        println!("{:?}", list);
+        println!("{:?}", list2);
         cmp_iterator(list, 0..3);
         cmp_iterator(list2, 3..10);
     }
